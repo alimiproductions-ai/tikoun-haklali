@@ -802,6 +802,9 @@ export default function App() {
   const toggleMic = () => {
     if (!SpeechRecognition) return;
 
+    // Detect iOS to use more stable settings
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+
     if (isListening) {
       if (recognitionRef.current) {
         try {
@@ -812,9 +815,16 @@ export default function App() {
       }
       setIsListening(false);
     } else {
-      if (!recognitionRef.current) {
+      // On iOS, it's often better to recreate the instance to avoid stale states
+      if (!recognitionRef.current || isIOS) {
+        if (recognitionRef.current) {
+          try { recognitionRef.current.stop(); } catch(e) {}
+        }
+        
         const recognition = new SpeechRecognition();
-        recognition.continuous = true;
+        // iOS Safari has issues with continuous: true, it often stops anyway
+        // We'll handle the restart manually in onend
+        recognition.continuous = !isIOS;
         recognition.interimResults = true;
         recognition.lang = 'he-IL';
 
@@ -888,7 +898,8 @@ export default function App() {
             setMicError(t.micError);
             setIsListening(false);
           } else if (event.error === 'service-not-allowed') {
-            setMicError(lang === 'he' ? 'שירות לא זמין (נסו לפתוח בדפדפן רגיל)' : 'Service not allowed (try opening in a regular browser)');
+            // This is almost always due to iframe context on iOS
+            setMicError('service-not-allowed');
             setIsListening(false);
           } else if (event.error === 'network') {
             setMicError(t.micNetwork);
@@ -898,16 +909,24 @@ export default function App() {
         };
 
         recognition.onend = () => {
-          if (isListening && recognitionRef.current) {
+          // Check if we should restart
+          // Use a small delay to avoid rapid restart loops
+          if (isListening) {
             setTimeout(() => {
+              // Re-check isListening inside timeout
               if (isListening && recognitionRef.current) {
                 try {
                   recognitionRef.current.start();
                 } catch (e) {
-                  console.warn('Recognition restart attempt', e);
+                  // If it's already started or failed, we might need to recreate it on iOS
+                  if (isIOS) {
+                    // Force recreate on next toggle if it fails to restart
+                    recognitionRef.current = null;
+                    setIsListening(false);
+                  }
                 }
               }
-            }, 1000);
+            }, 500);
           }
         };
 
@@ -920,6 +939,12 @@ export default function App() {
         setMicError(null);
       } catch (e) {
         console.error('Start error', e);
+        // On iOS, if start fails, try recreating
+        if (isIOS) {
+          recognitionRef.current = null;
+          // Try one more time with a fresh instance
+          setTimeout(toggleMic, 100);
+        }
       }
     }
   };
@@ -1307,7 +1332,21 @@ export default function App() {
                   </div>
                 )}
                 {micError && (
-                  <span className="text-xs text-red-500 font-bold mt-1 text-center max-w-[150px]">{micError}</span>
+                  <div className="flex flex-col items-center mt-1">
+                    <span className="text-xs text-red-500 font-bold text-center max-w-[200px]">
+                      {micError === 'service-not-allowed' 
+                        ? (lang === 'he' ? 'שירות לא זמין בתוך האפליקציה. לחצו למטה כדי לפתוח בדפדפן רגיל.' : 'Service not allowed in this view. Click below to open in a regular browser.')
+                        : micError}
+                    </span>
+                    {micError === 'service-not-allowed' && (
+                      <button 
+                        onClick={() => window.open(window.location.href, '_blank')}
+                        className="mt-2 text-xs bg-[var(--bordeaux)] text-white px-3 py-1 rounded-full font-bold shadow-md hover:bg-blue-700 transition-colors"
+                      >
+                        {lang === 'he' ? 'פתח בדפדפן חיצוני 🚀' : 'Open in Browser 🚀'}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
