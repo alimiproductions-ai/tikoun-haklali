@@ -133,11 +133,12 @@ const ConfirmModal = ({ isOpen, title, yesText, noText, onConfirm, onCancel }: {
   );
 };
 
-const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: boolean, lang: string, onFinish: () => void, onSkip: () => void, onAwardBadge: (id: string) => void }) => {
+const Tutorial = ({ isOpen, lang, onSetLang, onFinish, onSkip, onAwardBadge }: { isOpen: boolean, lang: string, onSetLang: (l: string) => void, onFinish: () => void, onSkip: () => void, onAwardBadge: (id: string) => void }) => {
   const [step, setStep] = useState(0);
   const [activeWords, setActiveWords] = useState<Set<number>>(new Set());
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState<number | null>(null);
+  const recognitionRef = useRef<any>(null);
   const t = i18n[lang];
   
   const tutorialPhrase = "נַ נַחְ נַחְמָ נַחְמָן מְאוּמָן";
@@ -157,6 +158,7 @@ const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: bo
   };
 
   const steps = [
+    { title: t.tutorial_lang_title, msg: t.tutorial_lang_msg, icon: "🌍" },
     { title: t.tutorial_step1_title, msg: t.tutorial_step1_msg, icon: "👋" },
     { title: t.tutorial_step2_title, msg: t.tutorial_step2_msg, icon: "📖" },
     { title: t.tutorial_step3_title, msg: t.tutorial_step3_msg, icon: "🎤" },
@@ -164,10 +166,77 @@ const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: bo
     { title: t.tutorial_step5_title, msg: t.tutorial_step5_msg, icon: "🏆" },
   ];
 
+  const toggleMic = () => {
+    if (!SpeechRecognition) return;
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.warn('Tutorial Mic Stop Error:', e);
+        }
+      }
+      setIsListening(false);
+    } else {
+      if (!recognitionRef.current) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'he-IL';
+
+        recognition.onresult = (event: any) => {
+          const results = event.results;
+          for (let i = event.resultIndex; i < results.length; i++) {
+            const transcript = results[i][0].transcript.toLowerCase();
+            const normSpoken = normalizeHebrewForSpeech(transcript);
+            
+            if (!normSpoken) continue;
+
+            words.forEach((word, index) => {
+              const normTarget = normalizeHebrewForSpeech(word);
+              if (normSpoken.includes(normTarget)) {
+                setActiveWords(prev => {
+                  const next = new Set(prev);
+                  next.add(index);
+                  return next;
+                });
+              }
+            });
+          }
+        };
+
+        recognition.onerror = (e: any) => {
+          console.error('Tutorial Mic Error:', e.error);
+          setIsListening(false);
+        };
+        
+        recognition.onend = () => {
+          if (isListening) {
+            try {
+              recognition.start();
+            } catch (e) {
+              console.warn('Tutorial Mic Restart Error:', e);
+            }
+          }
+        };
+
+        recognitionRef.current = recognition;
+      }
+
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (e) {
+        console.warn('Tutorial Mic Start Error:', e);
+      }
+    }
+  };
+
   const handleNext = () => {
     if (step < steps.length - 1) {
-      // Clear words when entering the practice step (step 3)
-      if (step === 2) {
+      // Clear words when entering the practice step (step 4 now)
+      if (step === 3) {
         setActiveWords(new Set());
       }
       setStep(step + 1);
@@ -184,54 +253,27 @@ const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: bo
   const handleRestart = () => {
     setStep(0);
     setActiveWords(new Set());
+    if (isListening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // ignore
+      }
+    }
     setIsListening(false);
   };
 
   useEffect(() => {
-    if (!SpeechRecognition || !isListening || !isOpen) return;
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'he-IL';
-
-    recognition.onresult = (event: any) => {
-      const results = event.results;
-      for (let i = event.resultIndex; i < results.length; i++) {
-        const transcript = results[i][0].transcript.toLowerCase();
-        const normSpoken = normalizeHebrewForSpeech(transcript);
-        
-        if (!normSpoken) continue;
-
-        words.forEach((word, index) => {
-          const normTarget = normalizeHebrewForSpeech(word);
-          if (normSpoken.includes(normTarget)) {
-            setActiveWords(prev => {
-              const next = new Set(prev);
-              next.add(index);
-              return next;
-            });
-          }
-        });
-      }
-    };
-
-    recognition.onerror = (e: any) => console.error('Tutorial Mic Error:', e.error);
-    
-    try {
-      recognition.start();
-    } catch (e) {
-      console.warn('Tutorial Mic Start Error:', e);
-    }
-    
     return () => {
-      try {
-        recognition.stop();
-      } catch (e) {
-        // ignore
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // ignore
+        }
       }
     };
-  }, [isListening, isOpen]);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -259,7 +301,7 @@ const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: bo
 
         {/* Step Content */}
         <div className="min-h-[200px] flex flex-col items-center justify-center mb-8">
-          {step === 1 && (
+          {step === 2 && (
             <div className="flex flex-wrap justify-center gap-4 dir-rtl" dir="rtl">
               {words.slice(0, 3).map((word, i) => (
                 <motion.div
@@ -294,12 +336,12 @@ const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: bo
             </div>
           )}
 
-          {step === 2 && (
+          {step === 3 && (
             <div className="flex flex-col items-center gap-6">
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={() => setIsListening(!isListening)}
+                onClick={toggleMic}
                 className={`p-8 rounded-full border-8 transition-all shadow-2xl ${
                   isListening 
                     ? 'bg-[var(--jaune)] border-orange-700 text-white animate-pulse' 
@@ -314,7 +356,7 @@ const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: bo
             </div>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <div className="flex flex-col items-center gap-6 w-full">
               <div className="bg-zinc-100 dark:bg-zinc-800 p-8 rounded-[2.5rem] flex flex-wrap justify-center gap-4 dir-rtl w-full" dir="rtl">
                 {words.map((word, i) => (
@@ -352,7 +394,7 @@ const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: bo
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={() => setIsListening(!isListening)}
+                onClick={toggleMic}
                 className={`p-4 rounded-full border-4 transition-all shadow-lg ${
                   isListening 
                     ? 'bg-[var(--jaune)] border-orange-700 text-white animate-pulse' 
@@ -365,10 +407,35 @@ const Tutorial = ({ isOpen, lang, onFinish, onSkip, onAwardBadge }: { isOpen: bo
           )}
 
           {step === 0 && (
+            <div className="grid grid-cols-2 gap-4 w-full max-w-md">
+              {[
+                { id: 'fr', label: 'Français', flag: '🇫🇷' },
+                { id: 'en', label: 'English', flag: '🇺🇸' },
+                { id: 'he', label: 'עברית', flag: '🇮🇱' },
+                { id: 'es', label: 'Español', flag: '🇪🇸' }
+              ].map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => onSetLang(l.id)}
+                  className={`
+                    p-6 rounded-[2rem] border-4 transition-all flex flex-col items-center gap-2
+                    ${lang === l.id 
+                      ? 'bg-[var(--jaune)] border-orange-700 text-white shadow-lg scale-105' 
+                      : 'bg-white dark:bg-zinc-800 border-[var(--gris)] text-[var(--text-main)] dark:text-white hover:border-[var(--bordeaux)]'}
+                  `}
+                >
+                  <span className="text-4xl">{l.flag}</span>
+                  <span className="font-black uppercase tracking-tight">{l.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {step === 1 && (
             <div className="text-8xl animate-bounce">✨</div>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <div className="text-center">
               <div className="text-8xl mb-4">🎉</div>
               <p className="text-2xl font-black text-[var(--vert)] uppercase tracking-widest">{t.wellDone}</p>
@@ -443,6 +510,8 @@ const i18n: Record<string, any> = {
     tutorial_prev: "הקודם",
     tutorial_restart: "התחל מחדש",
     tutorial_finish: "מתחילים!",
+    tutorial_lang_title: "בחר שפה",
+    tutorial_lang_msg: "בחר את השפה המועדפת עליך:",
     tutorial_step1_title: "ברוכים הבאים!",
     tutorial_step1_msg: "בואו נלמד יחד איך משתמשים באפליקציה!",
     tutorial_step2_title: "קריאה",
@@ -472,6 +541,8 @@ const i18n: Record<string, any> = {
     tutorial_prev: "Précédent",
     tutorial_restart: "Recommencer",
     tutorial_finish: "C'est parti !",
+    tutorial_lang_title: "Choisis ta langue",
+    tutorial_lang_msg: "Sélectionne ta langue préférée :",
     tutorial_step1_title: "Bienvenue !",
     tutorial_step1_msg: "Apprenons ensemble comment utiliser l'application !",
     tutorial_step2_title: "Lire",
@@ -501,6 +572,8 @@ const i18n: Record<string, any> = {
     tutorial_prev: "Previous",
     tutorial_restart: "Restart",
     tutorial_finish: "Let's Go!",
+    tutorial_lang_title: "Choose Language",
+    tutorial_lang_msg: "Select your preferred language:",
     tutorial_step1_title: "Welcome!",
     tutorial_step1_msg: "Let's learn how to use the app together!",
     tutorial_step2_title: "Read",
@@ -530,6 +603,8 @@ const i18n: Record<string, any> = {
     tutorial_prev: "Anterior",
     tutorial_restart: "Reiniciar",
     tutorial_finish: "¡Listo!",
+    tutorial_lang_title: "Elegir idioma",
+    tutorial_lang_msg: "Selecciona tu idioma preferido:",
     tutorial_step1_title: "¡Bienvenido!",
     tutorial_step1_msg: "¡Aprendamos a usar la aplicación juntos!",
     tutorial_step2_title: "Leer",
@@ -724,140 +799,138 @@ export default function App() {
     }
   }, [activeWords, currentP, currentPsalmWords.length, handleCompletePsalm]);
 
-  useEffect(() => {
+  const toggleMic = () => {
     if (!SpeechRecognition) return;
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'he-IL';
-
-    recognition.onresult = (event: any) => {
-      const lastResultIndex = event.results.length - 1;
-      const result = event.results[lastResultIndex];
-      const transcript = result[0].transcript.trim();
-      const words = transcript.split(/\s+/);
-      
-      // Determine which words in the current result are new
-      let startIndex = 0;
-      if (lastResultIndex === lastProcessedResultIndexRef.current) {
-        startIndex = lastProcessedWordCountRef.current;
-      }
-
-      // Use a local variable to track target progression within this single result update
-      // This ensures each spoken word only matches ONE target word
-      let currentTargetIndex = nextWordIndexRef.current;
-
-      const isMatch = (s: string, t: string) => {
-        if (!s || !t) return false;
-        if (s === t) return true;
-        // Inclusion check for words of reasonable length
-        if (s.length >= 3 && t.length >= 3) {
-          if (s.includes(t) || t.includes(s)) return true;
-          // Fuzzy match: 1 character difference for longer words
-          if (s.length >= 4 && t.length >= 4) {
-            let diffs = 0;
-            const minL = Math.min(s.length, t.length);
-            for (let k = 0; k < minL; k++) if (s[k] !== t[k]) diffs++;
-            diffs += Math.abs(s.length - t.length);
-            if (diffs <= 1) return true;
-          }
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.warn('Mic Stop Error:', e);
         }
-        return false;
-      };
+      }
+      setIsListening(false);
+    } else {
+      if (!recognitionRef.current) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'he-IL';
 
-      for (let i = startIndex; i < words.length; i++) {
-        const spokenWord = words[i];
-        if (currentTargetIndex !== -1 && currentTargetIndex < currentPsalmWordsRef.current.length) {
-          const targetWord = currentPsalmWordsRef.current[currentTargetIndex];
-          const normTarget = normalizeHebrewForSpeech(targetWord);
-          const normSpoken = normalizeHebrewForSpeech(spokenWord);
-
-          if (isMatch(normSpoken, normTarget)) {
-            handleToggleWord(currentTargetIndex, true);
-            currentTargetIndex++; // Advance to the next target word
-            continue;
+        recognition.onresult = (event: any) => {
+          const lastResultIndex = event.results.length - 1;
+          const result = event.results[lastResultIndex];
+          const transcript = result[0].transcript.trim();
+          const words = transcript.split(/\s+/);
+          
+          let startIndex = 0;
+          if (lastResultIndex === lastProcessedResultIndexRef.current) {
+            startIndex = lastProcessedWordCountRef.current;
           }
 
-          // Contextual Lookahead: If the spoken word matches the NEXT target word, 
-          // we assume the current one was skipped or mispronounced and validate both.
-          if (currentTargetIndex + 1 < currentPsalmWordsRef.current.length) {
-            const nextTargetWord = currentPsalmWordsRef.current[currentTargetIndex + 1];
-            const normNextTarget = normalizeHebrewForSpeech(nextTargetWord);
-            if (isMatch(normSpoken, normNextTarget)) {
-              handleToggleWord(currentTargetIndex, true);
-              handleToggleWord(currentTargetIndex + 1, true);
-              currentTargetIndex += 2;
-              continue;
+          let currentTargetIndex = nextWordIndexRef.current;
+
+          const isMatch = (s: string, t: string) => {
+            if (!s || !t) return false;
+            if (s === t) return true;
+            if (s.length >= 3 && t.length >= 3) {
+              if (s.includes(t) || t.includes(s)) return true;
+              if (s.length >= 4 && t.length >= 4) {
+                let diffs = 0;
+                const minL = Math.min(s.length, t.length);
+                for (let k = 0; k < minL; k++) if (s[k] !== t[k]) diffs++;
+                diffs += Math.abs(s.length - t.length);
+                if (diffs <= 1) return true;
+              }
+            }
+            return false;
+          };
+
+          for (let i = startIndex; i < words.length; i++) {
+            const spokenWord = words[i];
+            if (currentTargetIndex !== -1 && currentTargetIndex < currentPsalmWordsRef.current.length) {
+              const targetWord = currentPsalmWordsRef.current[currentTargetIndex];
+              const normTarget = normalizeHebrewForSpeech(targetWord);
+              const normSpoken = normalizeHebrewForSpeech(spokenWord);
+
+              if (isMatch(normSpoken, normTarget)) {
+                handleToggleWord(currentTargetIndex, true);
+                currentTargetIndex++;
+                continue;
+              }
+
+              if (currentTargetIndex + 1 < currentPsalmWordsRef.current.length) {
+                const nextTargetWord = currentPsalmWordsRef.current[currentTargetIndex + 1];
+                const normNextTarget = normalizeHebrewForSpeech(nextTargetWord);
+                if (isMatch(normSpoken, normNextTarget)) {
+                  handleToggleWord(currentTargetIndex, true);
+                  handleToggleWord(currentTargetIndex + 1, true);
+                  currentTargetIndex += 2;
+                  continue;
+                }
+              }
             }
           }
-        }
-      }
-      
-      // Update refs to mark these words as processed
-      lastProcessedResultIndexRef.current = lastResultIndex;
-      lastProcessedWordCountRef.current = words.length;
-    };
+          
+          lastProcessedResultIndexRef.current = lastResultIndex;
+          lastProcessedWordCountRef.current = words.length;
+        };
 
-    recognition.onstart = () => {
-      setMicError(null);
-    };
+        recognition.onstart = () => {
+          setMicError(null);
+        };
 
-    recognition.onerror = (event: any) => {
-      if (event.error === 'no-speech') {
-        // Ignore no-speech error to avoid annoying the user
-        return;
-      }
-      console.error('Speech recognition error', event.error);
-      if (event.error === 'not-allowed') {
-        setMicError(t.micError);
-        setIsListening(false);
-      } else if (event.error === 'network') {
-        setMicError(t.micNetwork);
-      } else {
-        setMicError(`${t.micError}: ${event.error}`);
-      }
-    };
+        recognition.onerror = (event: any) => {
+          if (event.error === 'no-speech') return;
+          console.error('Speech recognition error', event.error);
+          if (event.error === 'not-allowed') {
+            setMicError(t.micError);
+            setIsListening(false);
+          } else if (event.error === 'service-not-allowed') {
+            setMicError(lang === 'he' ? 'שירות לא זמין (נסו לפתוח בדפדפן רגיל)' : 'Service not allowed (try opening in a regular browser)');
+            setIsListening(false);
+          } else if (event.error === 'network') {
+            setMicError(t.micNetwork);
+          } else {
+            setMicError(`${t.micError}: ${event.error}`);
+          }
+        };
 
-    recognition.onend = () => {
-      // If we're still supposed to be listening, restart after a short delay
-      // This handles both normal ends and error-induced ends (like network errors)
-      if (recognitionRef.current && isListening) {
-        setTimeout(() => {
+        recognition.onend = () => {
           if (isListening && recognitionRef.current) {
-            try {
-              recognitionRef.current.start();
-            } catch (e) {
-              // If it's already started, this will throw, which is fine
-              console.warn('Recognition restart attempt', e);
-            }
+            setTimeout(() => {
+              if (isListening && recognitionRef.current) {
+                try {
+                  recognitionRef.current.start();
+                } catch (e) {
+                  console.warn('Recognition restart attempt', e);
+                }
+              }
+            }, 1000);
           }
-        }, 1000);
+        };
+
+        recognitionRef.current = recognition;
       }
-    };
 
-    recognitionRef.current = recognition;
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+        setMicError(null);
+      } catch (e) {
+        console.error('Start error', e);
+      }
+    }
+  };
 
+  useEffect(() => {
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
     };
-  }, [handleToggleWord, isListening]);
-
-  useEffect(() => {
-    if (!recognitionRef.current) return;
-    if (isListening) {
-      try {
-        recognitionRef.current.start();
-        setMicError(null);
-      } catch (e) {
-        console.error('Start error', e);
-      }
-    } else {
-      recognitionRef.current.stop();
-    }
-  }, [isListening]);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('tikun_lang', lang);
@@ -1203,7 +1276,7 @@ export default function App() {
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
-                      onClick={() => setIsListening(!isListening)}
+                      onClick={toggleMic}
                       className={`p-3 rounded-full border-4 transition-all shadow-lg ${
                         isListening 
                           ? 'bg-[var(--jaune)] border-orange-700 text-white animate-pulse' 
@@ -1371,6 +1444,10 @@ export default function App() {
       <Tutorial 
         isOpen={showTutorial}
         lang={lang}
+        onSetLang={(l) => {
+          setLang(l);
+          localStorage.setItem('tikun_lang', l);
+        }}
         onFinish={() => {
           setShowTutorial(false);
           localStorage.setItem('tikun_tutorial_seen', 'true');
