@@ -1,0 +1,470 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
+import confetti from 'canvas-confetti';
+import { Moon, Sun, ArrowLeft, Wand2, RotateCcw, CheckCircle2, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+// --- COMPONENTS ---
+const ConfirmModal = ({ isOpen, title, yesText, noText, onConfirm, onCancel }: { isOpen: boolean, title: string, yesText: string, noText: string, onConfirm: () => void, onCancel: () => void }) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+        >
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            className="bg-white p-8 rounded-[3rem] shadow-[0_12px_0_rgba(0,0,0,0.1)] max-w-xs w-full text-center border-8 border-[var(--bordeaux)]"
+          >
+            <h3 className="text-3xl font-black mb-8 text-[var(--text-main)] leading-tight uppercase tracking-tight">{title}</h3>
+            <div className="flex gap-4 justify-center">
+              <button 
+                onClick={onCancel}
+                className="flex-1 px-4 py-4 rounded-3xl border-4 border-[var(--gris)] text-[var(--text-muted)] font-black hover:bg-[var(--gris)] transition-all active:translate-y-1"
+              >
+                {noText}
+              </button>
+              <button 
+                onClick={onConfirm}
+                className="flex-1 px-4 py-4 rounded-3xl bg-[var(--jaune)] text-white font-black shadow-[0_6px_0_rgb(194,65,12)] hover:scale-105 active:translate-y-1 transition-all"
+              >
+                {yesText}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// --- I18N DATA ---
+const i18n: Record<string, any> = {
+  he: {
+    mainTitle: "תִּיקוּן הַכְּלָלִי", completed: "השלמת", outOf: "מתוך 10 פרקים", reset: "איפוס", back: "חזרה", selectAll: "בחר הכל 🪄", wellDone: "!כל הכבוד", returnMenu: "חזרה לתפריט", finalTitle: "אלוף התיקון הכללי!", finalMsg: "סיימת את כל הפרקים!<br>מגיע לך פרס מיוחד מאבא ואמא", restart: "התחל מחדש", confirmReset: "לאפס הכל?", confirmRemove: "להסיר את הסימון מפרק ", yes: "כן", no: "לא",
+    ranks: ["מתחילים!", "ניצוץ ראשון", "אור קטן", "מתמיד צעיר", "נחישות", "חצי הדרך!", "כוח הקדושה", "מפיץ אור", "כמעט שם", "שיא המתח", "אלוף התיקון!"]
+  },
+  fr: {
+    mainTitle: "Tikoun Haklali", completed: "Tu as fini", outOf: "sur 10 psaumes", reset: "Réinitialiser", back: "Retour", selectAll: "Tout valider 🪄", wellDone: "Bravo !", returnMenu: "Retour au menu", finalTitle: "Champion du Tikoun !", finalMsg: "Tu as terminé les 10 psaumes !<br>C'est l'heure de demander ton cadeau à Papa et Maman !", restart: "Recommencer", confirmReset: "Tout recommencer ?", confirmRemove: "Enlever la validation du chapitre ", yes: "Oui", no: "Non",
+    ranks: ["Débutant", "Première Étincelle", "Petite Lumière", "Jeune Persévérant", "Détermination", "Mi-chemin !", "Force de Sainteté", "Diffuseur de Lumière", "Presque au bout", "Sommet du Couronnement", "Champion du Tikoun !"]
+  },
+  en: {
+    mainTitle: "Tikoun Haklali", completed: "Completed", outOf: "out of 10 psalms", reset: "Reset", back: "Back", selectAll: "Select All 🪄", wellDone: "Well Done!", returnMenu: "Back to menu", finalTitle: "Tikoun Champion!", finalMsg: "You finished all 10 psalms!<br>Time to get your special prize from Mom and Dad!", restart: "Start Over", confirmReset: "Reset everything?", confirmRemove: "Remove completion for chapter ", yes: "Yes", no: "No",
+    ranks: ["Beginner", "First Spark", "Small Light", "Young Perseverant", "Determination", "Halfway!", "Holy Strength", "Light Spreader", "Almost There", "Crown Peak", "Tikoun Champion!"]
+  },
+  es: {
+    mainTitle: "Tikun Haklali", completed: "Completado", outOf: "de 10 salmos", reset: "Reiniciar", back: "Volver", selectAll: "Validar todo 🪄", wellDone: "¡Muy bien!", returnMenu: "Volver al menú", finalTitle: "¡Campeón del Tikun!", finalMsg: "¡Has terminado los 10 salmos!<br>¡Es hora de pedir tu premio a Papá y Mamá!", restart: "Empezar de nuevo", confirmReset: "¿Reiniciar todo?", confirmRemove: "Quitar validación del capítulo ", yes: "Sí", no: "No",
+    ranks: ["Principiante", "Primera Chispa", "Pequeña Luz", "Joven Perseverante", "Determinación", "¡Mitad de camino!", "Fuerza Sagrada", "Difusor de Luz", "Casi al final", "Cumbre de la Corona", "¡Campeón del Tikun!"]
+  }
+};
+
+const emojiRanks = ["🕯️", "✨", "💡", "🪵", "🔥", "🛡️", "⚡", "🌟", "💎", "👑", "🏆"];
+const psalmList = [16, 32, 41, 42, 59, 77, 90, 105, 137, 150];
+
+const psalmsData: Record<number, string> = {
+  16: "מִכְתָּם לְדָוִד שָׁמְרֵנִי אֵל כִּי חָסִיתִי בָךְ: אָמַרְתְּ לַיהֹוָה אֲדֹנָי אָתָּה טוֹבָתִי בַּל עָלֶיךָ: לִקְדוֹשִׁים אֲשֶׁר בָּאָרֶץ הֵמָּה וְאַדִּירֵי כָּל חֶפְצִי בָם: יִרְבּוּ עַצְּבוֹתָם אַחֵר מָהָרוּ בַּל אַסִּיךְ נִסְכֵּיהֶם מִדָּם וּבַל אֶשָּׂא אֶת שְׁמוֹתָם עַל שְׂפָתָי: יְהֹוָה מְנָת חֶלְקִי וְכוֹסִי אַתָּה תּוֹמִיךְ גּוֹרָלִי: חֲבָלִים נָפְלוּ לִי בַּנְּעִמִים אַף נַחֲלָת שָׁפְרָה עָלָי: אֲבָרֵךְ אֶת יְהֹוָה אֲשֶׁר יְעָצָנִי אַף לֵילוֹת יִסְּרוּנִי כִלְיוֹתָי: שִׁוִּיתִי יְהֹוָה לְנֶגְדִּי תָמִיד כִּי מִימִינִי בַּל אֶמּוֹט: לָכֵן שָׂמַח לִבִּי וַיָּגֶל כְּבוֹדִי אַף בְּשָׂרִי יִשְׁכֹּן לָבֶטַח: כִּי לֹא תַעֲזֹב נַפְשִׁי לִשְׁאוֹל לֹא תִתֵּן חֲסִידְךָ לִרְאוֹת שָׁחַת: תּוֹדִיעֵנִי אֹרַח חַיִּים שֹׂבַע שְׂמָחוֹת אֶת פָּנֶיךָ נְעִמוֹת בִּימִינְךָ נֶצַח:",
+  32: "לְדָוִד מַשְׂכִּיל אַשְׁרֵי נְשׂוּי פֶּשַׁע כְּסוּי חֲטָאָה: אַשְׁרֵי אָדָם לֹא יַחְשֹׁב יְהֹוָה לוֹ עָו‍ֹן וְאֵין בְּרוּחוֹ רְמִיָּה: כִּי הֶחֱרַשְׁתִּי בָּלוּ עֲצָמָי בְּשַׁאֲגָתִי כָּל הַיּוֹם: כִּי יוֹמָם וָלַיְלָה תִּכבַּד עָלַי יָדֶךָ נֶהְפַּךְ לְשַׁדִּי בְּחַרְבֹנֵי קַיִץ סֶלָה: חַטָּאתִי אוֹדִיעֲךָ וַעֲו‍ֹנִי לֹא כִסִּיתִי אָמַרְתִּי אוֹדֶה עֲלֵי פְשָׁעַי לַיהֹוָה וְאַתָּה נָשָׂאתָ עֲו‍ֹן חַטָּאתִי סֶלָה: עַל זֹאת יִתְפַּלֵּל כָּל חָסִיד אֵלֶיךָ לְעֵת מְצֹא רַק לְשֵׁטֶף מַיִם רַבִּים אֵלָיו לֹא יַגִּיעוּ: אַתָּה סֵתֶר לִי מִצַּר תִּצְּרֵנִי רָנֵּי פַלֵּט תְּסוֹבְבֵנִי סֶלָה: אַשְׂכִּילְךָ וְאוֹרְךָ בְּדֶרֶךְ זוּ תֵלֵךְ אִיעֲצָה עָלֶיךָ עֵינִי: אַל תִּהְיוּ כְּסווס כְּפֶרד אֵין הָבִין בְּמֶתֶג וָרֶסֶן עֶדְיוֹ לִבלוֹם בַּל קְרֹב אֵלֶיךָ: רַבִּים מַכְאוֹבִים לָרָשָׁע וְהַבוֹטֵחַ בַּיהֹוָה חֶסֶד יְסוֹבְבֶנּוּ: שִׂמְחוּ בַיהֹוָה וְגִילוּ צַדִּיקִים וְהַרנִינוּ כָּל יִשְׁרֵי לֵב:",
+  41: "לַמְנַצֵּחַ מִזְמוֹר לְדָוִד: אַשְׁרֵי מַשְׂכִּיל אֶל דָּל בְּיוֹם רָעָה יְמַלְּטֵהוּ יְהֹוָה: יְהֹוָה יִשְׁמְרֵהוּ וִיחַיֵּהוּ יְאֻשַּׁר בָּאָרֶץ וְאַל תִּתְּנֵהוּ בְּנֶפֶשׁ אֹיְבָיו: יְהֹוָה יִסְעָדֶנּוּ עַל עֶרֶשׂ דְּוָי כָּל מִשְׁכָּבוֹ הָפַכְתָּ בְחָלְיוֹ: אֲנִי אָמַרְתִּי יְהֹוָה חָנֵּנִי רְפָאָה נַפְשִׁי כִּי חָטָאתִי לָךְ: אוֹיְבַי יֹאמְרוּ רַע לִי מָתַי יָמוּת וְאָבַד שְׁמוֹ: וְאִם בָּא לִרְאוֹת שָׁוְא יְדַבֵּר לִבּוֹ יִקְבָּץ אָוֶן לוֹ יֵצֵא לַחוּץ יְדַבֵּר: יַחַד עָלַי יִתְלַחֲשׁוּ כָּל שֹׂנְאָי עָלַי יַחְשְׁבוּ רָעָה לִי: דְּבַר בְּלִיַּעַל יָצוּק בּוֹ וַאֲשֶׁר שָׁכַב לֹא יוֹסִיף לָקוּם: גַּם אִישׁ שְׁלוֹמִי אֲשֶׁר בָּטַחְתִּי בוֹ אוֹכֵל לַחְמִי הִגְדִּיל עָלַי עָקֵב: וְאַתָּה יְהֹוָה חָנֵּנִי וַהֲקִימֵנִי וַאֲשַׁלְּמָה לָהֶם: בְּזֹאת יָדַעְתִּי כִּי חָפַצְתָּ בִּי כִּי לֹא יָרִיעַ אֹיְבִי עָלָי: וַאֲנִי בְּתֻמִּי תָּמַכְתָּ בִּי וַתַּצִּיבֵנִי לְפָנֶיךָ לְעוֹלָם: בָּרוּךְ יְהֹוָה אֱלֹהֵי יִשְׂרָאֵל מֵהָעוֹלָם וְעַד הָעוֹלָם אָמֵן וְאָמֵן:",
+  42: "לַמְנַצֵּחַ מַשְׂכִּיל לִבְנֵי קֹרַח: כְּאַיָּל תַּעֲרֹג עַל אֲפִיקֵי מָיִם כֵּן נַפְשִׁי תַעֲרֹג אֵלֶיךָ אֱלֹהִים: צָמְאָה נַפְשִׁי לֵאלֹהִים לְאֵל חָי מָתַי אָבוֹא וְאֵרָאֶה פְּנֵי אֱלֹהִים: הָיְתָה לִּי דִמְעָתִי לֶחֶם יוֹמָם וָלָיְלָה בֶּאֱמֹר אֵלַי כָּל הַיּוֹם אַיֵּה אֱלֹהֶיךָ: אֵלֶּה אֶזְכְּרָה וְאֶשְׁפְּכָה עָלַי נַפְשִׁי כִּי אֶעֱבֹר בַּסָּךְ אֶדַּדֵּם עַד בֵּית אֱלֹהִים בְּקוֹל רִנָּה וְתוֹדָה הָמוֹן חוֹגֵג: מַה תִּשְׁתּוֹחֲחִי נַפְשִׁי וַתֶּהֱמִי עָלָי הוֹחִילִי לֵאלֹהִים כִּי עוֹד אוֹדֶנּוּ יְשׁוּעוֹת פָּנָיו: אֱלֹהַי עָלַי נַפְשִׁי תִשְׁתּוֹחָח עַל כֵּן אֶזְכָּרְךָ מֵאֶרֶץ יַרְדֵּן וְחֶרְמוֹנִים מֵהַר מִצְעָר: תְּהוֹם אֶל תְּהוֹם קוֹרֵא לְקוֹל צִנּוֹרֶיךָ כָּל מִשְׁבָּרֶיךָ וְגַלֶּיךָ עָלַי עָבָרוּ: יוֹמָם יְצַוֶּה יְהֹוָה חַסְדּוֹ וּבַלַּיְלָה שִׁירוֹ עִמִּי תְּפִלָּה לְאֵל חַיָּי: אוֹמְרָה לְאֵל סַלְעִי לָמָה שְׁכַחְתָּנִי לָמָּה קֹדֵר אֵלֵךְ בְּלַחַץ אוֹיֵב: בְּרֶצַח בְּעַצְמוֹתַי חֵרְפוּנִי צוֹרְרָי בֶּאֱמֹרָם אֵלַי כָּל הַיּוֹם אַיֵּה אֱלֹהֶיךָ: מַה תִּשְׁתּוֹחֲחִי נַפְשִׁי וּמַה תֶּהֱמִי עָלָי הוֹחִילִי לֵאלֹהִים כִּי עוֹד אוֹדֶנּוּ יְשׁוּעֹת פָּנַי וֵאלֹהָי:",
+  59: "לַמְנַצֵּחַ אַל תַּשְׁחֵת לְדָוִד מִכְתָּם בִּשְׁלֹחַ שָׁאוּל וַיִּשְׁמְרוּ אֶת הַבַּיִת לַהֲמיתוֹ: הַצִּילֵנִי מֵאֹיְבַי אֱלֹהָי מִמִּתְקוֹמְמַי תְּשַׂגְּבֵנִי: הַצִּילֵנִי מִפֹּעֲלֵי אָוֶן וּמֵאַנְשֵׁי דָמִים הוֹשִׁיעֵנִי: כִּי הִנֵּה אָרְבוּ לְנַפְשִׁי יָגוּרוּ עָלַי עַזִּים לֹא פִשְׁעִי וְלֹא חַטָּאתִי יְהֹוָה: בְּלִי עָוֹן יְרוּצוּן וְיִכּוֹנָנוּ עוּרָה לִקְרָאתִי וּרְאֵה: וְאַתָּה יְהֹוָה אֱלֹהִים צְבָאוֹת אֱלֹהֵי יִשְׂרָאֵל הָקִיצָה לִפְקֹד כָּל הַגּוֹיִם אַל תָּחֹן כָּל בֹּגְדֵי אָוֶן סֶלָה: יָשׁוּבוּ לָעֶרֶב יֶהֱמוּ כַכָּלֶב וִיסוֹבְבוּ עִיר: הִנֵּה יַבִּיעוּן בְּפִיהֶם חֲרָבוֹת בְּשִׂפְתוֹתֵיהֶם כִּי מִי שֹׁמֵעַ: וְאַתָּה יְהֹוָה תִּשְׂחַק לָמוֹ תִּלְעַג לְכָל גּוֹיִם: עֻזּוֹ אֵלֶיךָ אֶשְׁמֹרָה כִּי אֱלֹהִים מִשְׂגַּבִּי: אֱלֹהֵי חַסְדִּי יְקַדְּמֵנִי אֱלֹהִים יַרְאֵנִי בְשׁוֹרְרָי: אַל תַּהַרְגֵם פֶּן יִשְׁכְּחוּ עַמִּי הֲנִיעֵמוֹ בְחֵילְךָ וְהוֹרִידֵמוֹ מָגִנֵּנוּ אֲדֹנָי: חַטַּאת פִּיהֶם דְּבַר שְׂפָתֵימוֹ וְיִלָּכְדוּ בִגְאוֹנָם וּמֵאָלָה וּמִכַּחַשׁ יְסַפֵּרוּ: כַּלֵּה בְחֵמָה כַּלֵּה וְאֵינֵמוֹ וְיֵדְעוּ כִּי אֱלֹהִים מֹשֵׁל בְּיַעֲקֹב לְאַפְסֵי הָאָרֶץ סֶלָה: וְיָשׁוּבוּ לָעֶרֶב יֶהֱמוּ כַכָּלֶב וִיסוֹבְבוּ עִיר: הֵמָּה ינִיעוּן לֶאֱכֹל אִם לֹא יִשְׂבְּעוּ וַיָּלִינוּ: וַאֲנִי אָשִׁיר עֻזֶּךָ וַאֲרַנֵּן לַבֹּקֶר חַסְדֶּךָ כִּי הָיִיתָ מִשְׂגָּב לִי וּמָנוֹס בְּיוֹם צַר לִי: עֻזִּי אֵלֶיךָ אֲזַמֵּרָה כִּי אֱלֹהִים מִשְׂגַּבִּי אֱלֹהֵי חַסְדִּי:",
+  77: "לַמְנַצֵּחַ עַל יְדוּתוּן לְאָסָף מִזְמוֹר: קוֹלִי אֶל אֱלֹהִים וְאֶצְעָקָה קוֹלִי אֶל אֱלֹהִים וְהַאֲזִין אֵלָי: בְּיוֹם צָרָתִי אֲדֹנָי דָּרָשְׁתִּי יָדִי לַיְלָה נִגְרָה וְלֹא תָפוּג מֵאֲנָה הִנָּחֵם נַפְשִׁי: אֶזְכְּרָה אֱלֹהִים וְאֶהֱמָיָה אָשִׂיחָה וְתִתְעַטֵּף רוּחִי סֶלָה: אָחַזְתָּ שְׁמֻרוֹת עֵינָי נִפְעַמְתִּי וְלֹא אֲדַבֵּר: חִשַּׁבְתִּי יָמִים מִקֶּדֶם שְׁנוֹת עוֹלָמִים: אֶזְכְּרָה נְגִינָתִי בַּלָּיְלָה עִם לְבָבִי אָשִׂיחָה וַיְחַפֵּשׂ רוּחִי: הַלְעוֹלָמִים יִזְנַח אֲדֹנָי וְלֹא יֹסִיף לִרְצוֹת עוֹד: הֶאָפֵס לָנֶצַח חַסְדּוֹ גָּמַר אֹמֶר לְדֹר וָדֹר: הֲשָׁכַח חַנּוֹת אֵל אִם קָפַץ בְּאַף רַחֲמָיו סֶלָה: וָאֹמַר חַלּוֹתִי הִיא שְׁנוֹת יְמִין עֶלְיוֹן: אֶזְכּוֹר מַעַלְלֵי יָהּ כִּי אֶזְכְּרָה מִקֶּדֶם פִּלְאֶךָ: וְהָגיתִי בְכָל פָּעֳלֶךָ וּבַעֲלילוֹתֶיךָ אָשִׂיחָה: אֱלֹהִים בַּקֹּדֶשׁ דַּרְכֶּךָ מִי אֵל גָּדוֹל כֵּאלֹהִים: אַתָּה הָאֵל עֹשֵׂה פֶלֶא הוֹדַעְתָּ בָעַמִּים עֻזֶּךָ: גָּאַלְתָּ בִּזרוֹעַ עַמֶּךָ בְּנֵי יַעֲקֹב וְיוֹסֵף סֶלָה: רָאוּךָ מַּיִם אֱלֹהִים רָאוּךָ מַּיִם יָחִילוּ אַף יִרְגְּזוּ תְהֹמוֹת: זֹרְמוּ מַיִם עָבוֹת קוֹל נָתְנוּ שְׁחָקִים אַף חֲצָצֶיךָ יִתְהַלָּכוּ: קוֹל רַעַמְךָ בַּגַּלְגּל הֵאִירוּ בְרָקִים תֵּבֵל רָגְזָה וַתִּרְעַשׁ הָאָרֶץ: בַּיָּם דַּרְכֶּךָ וּשְׁבִילְךָ בְּמַיִם רַבִּים וְעִקְּבוֹתֶיךָ לֹא נוֹדָעוּ: נָחִיתָ כַצֹּאן עַמֶּךָ בְּיַד מֹשֶׁה וְאַהֲרֹן",
+  90: "תְּפִלָּה לְמֹשֶׁה אִישׁ הָאֱלֹהִים אֲדֹנָי מָעוֹן אַתָּה הָיִיתָ לָּנוּ בְּדֹר וָדֹר: בְּטֶרֶם הָרִים יֻלָּדוּ וַתְּחוֹלֵל אֶרֶץ וְתֵבֵל וּמֵעוֹלָם עַד עוֹלָם אַתָּה אֵל: תָּשֵׁב אֱנוֹשׁ עַד דַּכָּא וַתֹּאמר שׁוּבוּ בְנֵי אָדָם: כִּי אֶלֶף שָׁנִים בְּעֵינֶיךָ כְּיוֹם אֶתְמוֹל כִּי יַעֲבֹר וְאַשְׁמוּרה בַלָּיְלָה: זְרַמְתָּם שֵׁנָה יִהְיוּ בַּבֹּקקר כֶּחָצִיר יַחֲלֹף: בַּבֹּקֶר יָצִיץ וְחָלָף לָעֶרֶב יְמוֹלֵל וְיָבֵשׁ: כִּי כָלִינוּ בְאַפֶּךָ וּבַחֲמָתְךָ נִבְהָלְנוּ: שַׁתָּה עֲוֹנֹתֵינוּ לְנֶגְדֶּךָ עֲלֻמֵנוּ לִמְאוֹר פָּנֶיךָ: כִּי כָל יָמֵינוּ פָּנוּ בְעֶבְרָתֶךָ כִּלִּינוּ שָׁנֵינוּ כְמוֹ הֶגֶה: יְמֵי שְׁנוֹתֵינוּ בָהֶם שִׁבְעִים שָׁנָה וְאִם בִּגְבוּרֹת שְׁמוֹנִים שָׁנָה וְרָהְבָּם עָמָל וָאָוֶן כִּי גָז חִישׁ וַנָּעֻפָה: מִי יוֹדֵעַ עֹז אַפֶּךָ וּכְיִרְאָתְךָ עֶבְרָתֶךָ: לִמְנוֹת יָמֵינוּ כֵּן הוֹדַע וְנָבִא לְבָבָב חָכְמָה: שׁוּבָה יְהֹוָה עַד מָתָי וְהִנָּחֵם עַל עֲבָדֶיךָ: שַׂבְּעֵנוּ בַבֹּקֶר חַסְדֶּךָ וּנְרַנְּנָה וְנִשְׂמְחָה בְּכָל יָמֵינוּ: שַׂמְּחֵנוּ כִּימוֹת עִנִּיתָנוּ שְׁנוֹת רָאִינוּ רָעָה: יֵרָאֶה אֶל עֲבָדֶיךָ פָעֳלֶךָ וַהֲדָרְךָ עַל בְּנֵיהֶם: וִיהִי נֹעַם אֲדֹנָי אֱלֹהֵינוּ עָלֵינוּ וּמַעֲשֵׂה יָדֵינוּ כּוֹנְנָה עָלֵינוּ וּמַעֲשֵׂה יָדֵינוּ כּוֹנְנֵהוּ:",
+  105: "הוֹדוּ לַיהֹוָה קִרְאוּ בִשְׁמוֹ הוֹדִיעוּ בָעַמִּים עֲלִילוֹתָיו: שִׁירוּ לוֹ זַמְּרוּ לוֹ שִׂיחוּ בְּכָל נִפְלְאוֹתָיו: הִתְהַלְלוּ בְּשֵׁם קָדְשׁוֹ יִשְׂמַח לֵב מְבַקְשֵׁי יְהֹוָה: דִּרְשׁוּ יְהֹוָה וְעֻזּוֹ בַּקְּשׁוּ פָנָיו תָּמִיד: זִכְרוּ נִפְלְאוֹתָיו אֲשֶׁר עָשָׂה מֹפְתָיו וּמִשְׁפְּטֵי פִיו: זֶרַע אַבְרָהָם עַבְדּוֹ בְּנֵי יַעֲקֹב בְּחִירָיו: הוּא יְהֹוָה אֱלֹהֵינוּ בְּכָל הָאָרֶץ מִשְׁפָּטָיו: זָכַר לְעוֹלָם בְּרִיתוֹ דָּבָר צִוָּה לְאֶלֶף דּוֹר: אֲשֶׁר כָּרַת אֶת אַבְרָהָם וּשְׁבוּעָתוֹ לְיִשְׂחָק: וַיַּעֲמִידֶהָ לְיַעֲקֹב לְחֹק לְיִשְׂרָאֵל בְּרִית עוֹלָם: לֵאמֹר לְךָ אֶתֵּן אֶת אֶרֶץ כְּנָעַן חֶבֶל נַחֲלַתְכֶם: בִּהְיוֹתָם מְתֵי מִסְפָּר כִּמְעַט וְגָרִים בָּהּ: וַיִּתְהַלְּכוּ מִגּוֹי אֶל גּוֹי מִמַּמְלָכָה אֶל עַם אַחֵר: לֹא הִנִּיחַ אָדָם לְעָשְׁקָם וַיּוֹכַח עֲלֵיהֶם מְלָכִים: אַל תִּגְּעוּ בִמְשִׁיחָי וְלִנְבִיאַי אַל תָּרֵעוּ: וַיִּקְרָא רָעָב עַל הָאָרֶץ כָּל מַטֵּה לֶחֶם שָׁבָר: שָׁלַח לִפְנֵיהֶם אִישׁ לְעֶבד נִמְכַּר יוֹסֵף: עִנּוּ בַכֶּבֶל רַגלוֹ בַּרְזֶל בָּאָה נַפְשׁוֹ: עַד עֵת בֹּא דְבָרוֹ אִמְרַת יְהֹוָה צְרָפָתְהוּ: שָׁלַח מֶלֶך וַיַּתִּירֵהוּ מֹשֵׁל עַמִּים וַיְפַתְּחֵהוּ: שָׂמוֹ אָדוֹן לְבֵיתוֹ וּמֹשֵׁל בְּכָל קִנְיָנוֹ: לֶאְסֹר שָׂרָיו בְּנַפְשׁוֹ וּזְקֵנָיו יְחַכֵּם: וַיָּבֹא יִשְׂרָאֵל מִצְרָיִם וְיַעֲקֹב גָּר בְּאֶרֶץ חָם: וַיֶּפֶר אֶת עַמּוֹ מְאֹד וַיַּעֲצִמֵהוּ מִצָּרָיו: הָפַךְ לִבָּם לִשְׂנֹא עַמּוֹ לְהִתְנַכֵּל בַּעֲבָדָיו: שָׁלַח מֹשֶׁה עַבְדּוֹ אַהֲרֹן אֲשֶׁר בָּחַר בּוֹ: שָׂמוּ בָם דִּבְרֵי אֹתוֹתָיו וּמֹפְתִים בְּאֶרֶץ חָם: שָׁלַח חֹשֶׁךְ וַיַּחְשִׁךְ וְלֹא מָרוּ אֶת דְּבָרוֹ: הָפַךְ אֶת מֵימֵיהֶם לְדָם וַיָּמֶת אֶת דְּגָתָם: שָׁרַץ אַרְצָם צְפַרְדְּעִים בְּחַדְרֵי מַלְכֵיהֶם: אָמַר וַיָּבֹא עָרֹב כִּנִּים בְּכָל גְּבוּלָם: נָתַן גִּשְׁמֵיהֶם בָּרָד אֵשׁ לֶהָבוֹת בְּאַרְצָם: וַיַּךְ גַּפנָם וּתְאֵנָתָם וַיְשַׁבֵּר עֵץ גְּבוּלָם: אָמַר וַיָּבֹא אַרְבֶּה וְיֶלֶק וְאֵין מִסְפָּר: וַיֹּאכַל כָּל עֵשֶׂב בְּאַרְצָם וַיֹּאכַל פְּרִי אַדְמָתָם: וַיַּךְ כָּל בְּכוֹר בְּאַרְצָם רֵאשִׁית לְכָל אוֹנָם: וַיּוֹצִיאֵם בְּכֶסֶף וְזָהָב וְאֵין בִּשְׁבָטָיו כּוֹשֵׁל: שָׂמַח מִצרַיִם בְּצֵאתָם כִּי נָפַל פַּחְדָּם עֲלֵיהֶם: פָּרַשׂ עָנָן לְמָסָךְ וְאֵשׁ לְהָאִיר לָיְלָה: שָׁאַל וַיָּבֵא שְׂלָו וְלֶחֶם שָׁמַיִם יַשְׂבִּיעֵם: פָּתַח צוּר וַיָּזוּבוּ מָיִם הָלְכוּ בַּצִּיּוֹת נָהָר: כִּי זָכַר אֶת דְּבַר קָדְשׁוֹ אֶת אַבְרָהָם עַבְדּוֹ: וַיּוֹצִא עַמּוֹ בְשָׂשׂוֹן בְּרִנָּה אֶת בְּחִירָיו: וַיִּתֵּן לָהֶם אַרְצוֹת גּוֹיִם וַעֲמַל לְאֻמִּים יִירָשׁוּ: בַּעֲבוּר יִשְׁמְרוּ חֻקָּיו וְתוֹרֹתָיו יִנְצֹרוּ הַלְלוּיָהּ:",
+  137: "עַל נַהֲרוֹת בָּבֶל שָׁם יָשַׁבְנוּ גַּם בָּכִינוּ בְּזָכְרֵנוּ אֶת צִיּוֹן: עַל עֲרָבִים בְּתוֹכָהּ תָּלִינוּ כִּנֹּרוֹתֵינוּ: כִּי שָׁם שְׁאֵלוּנוּ שׁוֹבֵינוּ דִּבְרֵי שִׁיר וְתוֹלָלֵינוּ שִׂמְחָה שִׁירוּ לָנוּ מִשִּׁיר צִיּוֹן: אֵיךְ נָשִׁיר אֶת שִׁיר יְהֹוָה עַל אַדְמַת נֵכָר: אִם אֶשְׁכָּחֵךְ יְרוּשָׁלִָם תִּשְׁכַּח יְמִינִי: תִּדְבַּק לְשׁוֹנִי לְחִכִּי אִם לֹא אֶזְכְּרֵכִי אִם לֹא אַעֲלֶה אֶת יְרוּשָׁלִַם עַל רֹאשׁ שִׂמְחָתִי: זְכֹר יְהֹוָה לִבְנֵי אֱדוֹם אֵת יוֹם יְרוּשָׁלִָם הָאֹמְרִים עָרוּ עָרוּ עַד הַיְסוֹד בָּהּ: בַּת בָּבֶל הַשְּׁדוּדָה אַשְׁרֵי שֶׁיְשַׁלֶּם לָךְ אֶת גְּמוּלֵךְ שֶׁגָּמַלְתְּ לָנוּ: אַשְׁרֵי שֶׁיֹּאחֵז וְנִפֵּץ אֶת עֹלָלַיִךְ אֶל הַסָּלַע:",
+  150: "הַלְלוּיָהּ הַלְלוּ אֵל בְּקָדְשׁוֹ הַלְלוּהוּ בִּרְקִיעַ עֻזּוֹ: הַלְלוּהוּ בִּגְבוּרֹתָיו הַלְלוּהוּ כְּרֹב גֻּדְלוֹ: הַלְלוּהוּ בְּתֵקַע שׁוֹפָר הַלְלוּהוּ בְּנֵבֶל וְכִנּוֹר: הַלְלוּהוּ בְּתֹף וּמָחוֹל הַלְלוּהוּ בְּמִנִּים וְעֻגָב: הַלְלוּהוּ בְּצִלְצְלֵי שָׁמַע הַלְלוּהוּ בְּצִלְצְלֵי תְרוּעָה: כֹּל הַנְּשָׁמָה תְּהַלֵּל יָהּ הַלְלוּיָהּ:"
+};
+
+export default function App() {
+  const [lang, setLang] = useState<string>(() => localStorage.getItem('tikun_lang') || 'he');
+  const [completed, setCompleted] = useState<number[]>(() => JSON.parse(localStorage.getItem('tikun_c') || "[]"));
+  const [currentP, setCurrentP] = useState<number | null>(null);
+  const [activeWords, setActiveWords] = useState<Set<number>>(new Set());
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => localStorage.getItem('tikun_dark') === 'true');
+  
+  // Confirmation state
+  const [confirmData, setConfirmData] = useState<{ type: 'reset' | 'remove', psalm?: number } | null>(null);
+
+  const t = i18n[lang];
+
+  useEffect(() => {
+    localStorage.setItem('tikun_lang', lang);
+    document.body.dir = lang === 'he' ? 'rtl' : 'ltr';
+  }, [lang]);
+
+  useEffect(() => {
+    localStorage.setItem('tikun_c', JSON.stringify(completed));
+  }, [completed]);
+
+  useEffect(() => {
+    localStorage.setItem('tikun_dark', String(isDarkMode));
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  const currentPsalmWords = useMemo(() => {
+    if (currentP === null) return [];
+    return psalmsData[currentP].split(' ');
+  }, [currentP]);
+
+  const nextWordIndex = useMemo(() => {
+    for (let i = 0; i < currentPsalmWords.length; i++) {
+      if (!activeWords.has(i)) return i;
+    }
+    return -1;
+  }, [currentPsalmWords, activeWords]);
+
+  const handleToggleWord = (index: number) => {
+    const newActive = new Set(activeWords);
+    if (newActive.has(index)) {
+      newActive.delete(index);
+    } else {
+      newActive.add(index);
+    }
+    setActiveWords(newActive);
+
+    if (newActive.size === currentPsalmWords.length && currentPsalmWords.length > 0) {
+      handleCompletePsalm(currentP!);
+    }
+  };
+
+  const handlePsalmClick = (n: number) => {
+    if (completed.includes(n)) {
+      setConfirmData({ type: 'remove', psalm: n });
+    } else {
+      setCurrentP(n);
+      setActiveWords(new Set());
+    }
+  };
+
+  const handleCompletePsalm = (n: number) => {
+    if (!completed.includes(n)) {
+      setCompleted(prev => [...prev, n]);
+    }
+    confetti({
+      particleCount: 150,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+  };
+
+  const handleFastValidate = (n: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (completed.includes(n)) {
+      setConfirmData({ type: 'remove', psalm: n });
+    } else {
+      setCompleted(prev => [...prev, n]);
+      confetti({ particleCount: 50, spread: 60 });
+    }
+  };
+
+  const resetAll = () => {
+    setConfirmData({ type: 'reset' });
+  };
+
+  const executeConfirm = () => {
+    if (!confirmData) return;
+    if (confirmData.type === 'reset') {
+      setCompleted([]);
+      localStorage.setItem('tikun_c', "[]");
+    } else if (confirmData.type === 'remove' && confirmData.psalm) {
+      setCompleted(prev => prev.filter(id => id !== confirmData.psalm));
+    }
+    setConfirmData(null);
+  };
+
+  const currentRankIndex = completed.length;
+
+  return (
+    <div className="min-h-screen p-4 transition-colors duration-300">
+      {/* Header Tools */}
+      <ConfirmModal 
+        isOpen={confirmData !== null}
+        title={confirmData?.type === 'reset' ? t.confirmReset : t.confirmRemove + confirmData?.psalm + "?"}
+        yesText={t.yes}
+        noText={t.no}
+        onConfirm={executeConfirm}
+        onCancel={() => setConfirmData(null)}
+      />
+      <div className="flex justify-between items-center mb-4 max-w-lg mx-auto">
+        <div className="flex gap-2">
+          {['he', 'fr', 'en', 'es'].map(l => (
+            <motion.button
+              key={l}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setLang(l)}
+              className={`px-3 py-1.5 rounded-xl border-2 text-xs font-bold transition-all ${
+                lang === l 
+                  ? 'bg-[var(--bordeaux)] border-[var(--bordeaux)] text-white shadow-md' 
+                  : 'bg-[var(--card-bg)] border-[var(--gris)] text-[var(--text-muted)] hover:border-[var(--bordeaux)] hover:text-[var(--bordeaux)]'
+              }`}
+            >
+              {l === 'he' ? 'עברית' : l.toUpperCase()}
+            </motion.button>
+          ))}
+        </div>
+        <motion.button
+          whileHover={{ scale: 1.1, rotate: 15 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setIsDarkMode(!isDarkMode)}
+          className="p-2.5 rounded-full bg-[var(--card-bg)] border-2 border-[var(--bordeaux)] text-[var(--bordeaux)] shadow-md transition-transform"
+          aria-label="Toggle Dark Mode"
+        >
+          {isDarkMode ? <Sun size={22} /> : <Moon size={22} />}
+        </motion.button>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {currentP === null ? (
+          <motion.div 
+            key="home"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            id="home" 
+            className="max-w-lg mx-auto"
+          >
+            <h2 className="display-text text-4xl text-[var(--bordeaux)] text-center mb-4">{t.mainTitle}</h2>
+            
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-xl border-4 border-[var(--bordeaux)] mb-10 text-center transform hover:rotate-1 transition-transform"
+            >
+              <div className="text-3xl font-black text-[var(--bordeaux)] mb-3 uppercase tracking-wider">{t.ranks[currentRankIndex]}</div>
+              <motion.div 
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 3 }}
+                className="text-7xl mb-6 drop-shadow-lg"
+              >
+                {emojiRanks[currentRankIndex]}
+              </motion.div>
+              <div className="w-full bg-[var(--gris)] h-8 rounded-full border-4 border-[var(--bordeaux)] overflow-hidden mb-4 shadow-inner">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${completed.length * 10}%` }}
+                  className="h-full rainbow-animate transition-all duration-1000 ease-out" 
+                  style={{ 
+                    background: 'var(--rainbow)',
+                    backgroundSize: '200% 100%'
+                  }}
+                />
+              </div>
+              <div className="text-lg font-bold text-[var(--text-main)]">
+                {t.completed} <span className="text-3xl text-[var(--jaune)]">{completed.length}</span> {t.outOf}
+              </div>
+            </motion.div>
+
+            <motion.div 
+              initial="hidden"
+              animate="visible"
+              variants={{
+                visible: { transition: { staggerChildren: 0.05 } }
+              }}
+              className="grid grid-cols-3 sm:grid-cols-5 gap-4 justify-items-center"
+            >
+              {psalmList.map(n => {
+                const isDone = completed.includes(n);
+                return (
+                  <motion.div 
+                    key={n} 
+                    variants={{
+                      hidden: { scale: 0, opacity: 0 },
+                      visible: { scale: 1, opacity: 1 }
+                    }}
+                    className="relative group"
+                  >
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={(e) => handleFastValidate(n, e)}
+                      className={`absolute -top-3 -left-3 w-10 h-10 rounded-full border-4 flex items-center justify-center z-10 transition-all shadow-md ${
+                        isDone 
+                          ? 'bg-white border-[var(--vert)] text-[var(--vert)]' 
+                          : 'bg-white border-[var(--gris)] text-[var(--text-muted)] opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      {isDone ? <CheckCircle2 size={20} /> : <Wand2 size={20} />}
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handlePsalmClick(n)}
+                      className={`w-16 h-16 sm:w-20 sm:h-20 rounded-3xl border-4 flex items-center justify-center text-2xl font-black transition-all ${
+                        isDone
+                          ? 'bg-[var(--vert)] border-green-700 text-white shadow-[0_6px_0_rgb(21,128,61)]'
+                          : 'bg-white border-[var(--bordeaux)] text-[var(--bordeaux)] shadow-[0_6px_0_rgb(29,78,216)]'
+                      }`}
+                    >
+                      {n}
+                    </motion.button>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={resetAll} 
+              className="mt-12 mx-auto block opacity-60 hover:opacity-100 transition-all text-sm font-black flex items-center gap-2 bg-white border-4 border-[var(--gris)] px-6 py-3 rounded-full text-[var(--text-muted)] shadow-md"
+            >
+              <RotateCcw size={18} /> {t.reset}
+            </motion.button>
+          </motion.div>
+        ) : (
+          <motion.div 
+            key="game"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            id="game-area" 
+            className="max-w-3xl mx-auto"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <motion.button 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setCurrentP(null)} 
+                className="flex items-center gap-2 px-6 py-3 bg-white border-4 border-[var(--gris)] rounded-2xl text-sm font-black shadow-md transition-all"
+              >
+                <ArrowLeft size={18} /> {t.back}
+              </motion.button>
+              <h2 className="display-text text-3xl text-[var(--bordeaux)]">
+                {lang === 'he' ? 'פרק ' : 'Psalm '} {currentP}
+              </h2>
+              <motion.button 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  const all = new Set(currentPsalmWords.map((_, i) => i));
+                  setActiveWords(all);
+                  handleCompletePsalm(currentP!);
+                }} 
+                className="px-6 py-3 bg-[var(--jaune)] text-white rounded-2xl text-sm font-black flex items-center gap-2 shadow-[0_4px_0_rgb(194,65,12)] transition-all"
+              >
+                <Wand2 size={18} /> {t.selectAll}
+              </motion.button>
+            </div>
+
+            <div className="w-full bg-[var(--gris)] h-2 rounded-full overflow-hidden mb-8">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: `${(activeWords.size / currentPsalmWords.length) * 100}%` }}
+                className="h-full bg-[var(--vert)] transition-all duration-300" 
+              />
+            </div>
+
+            <div 
+              className="hebrew-text text-3xl sm:text-4xl leading-[3] sm:leading-[3.5] text-center text-[var(--text-main)] selection:bg-[var(--jaune)]"
+              dir="rtl"
+            >
+              {currentPsalmWords.map((word, index) => (
+                <motion.span
+                  key={index}
+                  initial={false}
+                  animate={{
+                    scale: index === nextWordIndex ? 1.15 : 1,
+                    y: index === nextWordIndex ? -4 : 0
+                  }}
+                  onClick={() => handleToggleWord(index)}
+                  className={`inline-block mx-2 my-1 px-3 py-1 rounded-2xl cursor-pointer transition-all border-b-4 ${
+                    activeWords.has(index)
+                      ? 'bg-[var(--vert)] text-white border-green-700 shadow-inner'
+                      : index === nextWordIndex
+                        ? 'bg-[var(--active-word)] border-[var(--jaune)] shadow-[0_0_15px_var(--jaune)] z-10 font-black'
+                        : 'bg-[var(--card-bg)] border-[var(--gris)] text-[var(--text-muted)] hover:border-[var(--bordeaux)]'
+                  }`}
+                >
+                  {word}
+                </motion.span>
+              ))}
+            </div>
+
+            {/* Completion Overlays */}
+            <AnimatePresence>
+              {completed.includes(currentP) && activeWords.size === currentPsalmWords.length && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-[var(--fond)] z-50 flex flex-col items-center justify-center p-6"
+                >
+                  <motion.div 
+                    initial={{ scale: 0, rotate: -180 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: 'spring', damping: 12 }}
+                    className="text-9xl mb-6 drop-shadow-2xl"
+                  >
+                    {emojiRanks[completed.length]}
+                  </motion.div>
+                  <motion.h1 
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="display-text text-7xl text-[var(--vert)] mb-4 drop-shadow-md"
+                  >
+                    {t.wellDone}
+                  </motion.h1>
+                  <motion.p 
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.3 }}
+                    className="text-2xl mb-10 text-center font-black text-[var(--text-main)]"
+                  >
+                    {lang === 'he' ? 'עלית לדרגת: ' : 'New Rank: '} 
+                    <span className="text-[var(--jaune)]">{t.ranks[completed.length]}</span>
+                  </motion.p>
+                  
+                  {completed.length === 10 ? (
+                    <motion.div 
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: 0.5 }}
+                      className="text-center bg-white p-10 rounded-[3rem] shadow-2xl border-8 border-[var(--jaune)]"
+                    >
+                      <h2 className="display-text text-5xl text-[var(--bordeaux)] mb-6">{t.finalTitle}</h2>
+                      <p className="text-xl mb-10 font-bold leading-relaxed" dangerouslySetInnerHTML={{ __html: t.finalMsg }} />
+                      <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={resetAll}
+                        className="px-12 py-5 bg-[var(--bordeaux)] text-white rounded-3xl text-2xl font-black shadow-[0_8px_0_rgb(29,78,216)] transition-all"
+                      >
+                        {t.restart}
+                      </motion.button>
+                    </motion.div>
+                  ) : (
+                    <motion.button 
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: 0.5 }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setCurrentP(null)}
+                      className="px-12 py-5 bg-[var(--bordeaux)] text-white rounded-3xl text-2xl font-black shadow-[0_8px_0_rgb(29,78,216)] transition-all"
+                    >
+                      {t.returnMenu}
+                    </motion.button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

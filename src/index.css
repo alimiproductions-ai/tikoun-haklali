@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&family=Amatic+SC:wght@700&family=Frank+Ruhl+Libre:wght@300;400;700&display=swap');
+
+@theme {
+  --font-sans: "Assistant", ui-sans-serif, system-ui, sans-serif;
+  --font-hebrew: "Frank Ruhl Libre", serif;
+  --font-display: "Amatic SC", cursive;
+}
+
+:root {
+  --bordeaux: #3b82f6; /* Bleu Jouet (Primaire) */
+  --vert: #22c55e;    /* Vert Succès (Validé) */
+  --fond: #f0f9ff;    /* Ciel très clair */
+  --jaune: #f97316;   /* Orange Énergie (Accents) */
+  --gris: #e0f2fe;    /* Fond de barre bleu ciel */
+  --card-bg: #ffffff;
+  --text-main: #1e3a8a; /* Bleu Nuit */
+  --text-muted: #60a5fa; /* Bleu Clair */
+  --active-word: #fef3c7; /* Ambre très clair pour le mot à lire */
+  --rainbow: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8b00ff);
+}
+
+.dark {
+  --fond: #020617;
+  --card-bg: #0f172a;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --gris: #1e293b;
+  --bordeaux: #60a5fa;
+  --active-word: #fbbf24; /* Jaune ambre vif pour le mot à lire en dark mode */
+}
+
+@keyframes rainbow-move {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.rainbow-animate {
+  animation: rainbow-move 3s linear infinite;
+}
+
+body {
+  background-color: var(--fond);
+  color: var(--text-main);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.hebrew-text {
+  font-family: var(--font-hebrew);
+  direction: rtl;
+  unicode-bidi: isolate;
+}
+
+.display-text {
+  font-family: var(--font-display);
+}
