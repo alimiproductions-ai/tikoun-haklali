@@ -1,5 +1,5 @@
 {
-  "name": "Tikkoun Haklali for Kids",
+  "name": "Tikoun Haklali for Kids",
   "description": "Un petit jeu interactif pour apprendre et réciter le Tikkoun Haklali avec suivi de progression.",
   "requestFramePermissions": ["microphone"]
 }
